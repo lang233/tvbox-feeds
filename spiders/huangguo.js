@@ -11,7 +11,7 @@ const TIMEOUT_MS = 7000;      // 单封面取图超时(ms)
 const DEBUG = false;          // 置 true 可打印取图/解密失败原因
 // 服务端解密Worker地址。填上后封面 URL 直接指向明文图（TV端稳定，推荐）：
 // 留空 '' 则回退到蜘蛛 proxy() 运行时解密（依赖 app 把封面请求走代理，TV 上不稳）。
-const DECRYPT_HOST = 'https://cover-decrypt.qq308375072.workers.dev';
+const DECRYPT_HOST = 'https://huangguo-cover.qq308375072.workers.dev';
 
 const EMPTY_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=';
 
