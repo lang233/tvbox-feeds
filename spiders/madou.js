@@ -190,7 +190,7 @@ function players(html, detailUrl) {
   return list;
 }
 
-function tagLinks(html) {
+function detailTags(html, clickable) {
   const scope = block(html, 'div', 'article-tags');
   const links = [];
   const seen = {};
@@ -201,16 +201,43 @@ function tagLinks(html) {
     const name = text(m[0]);
     if (path.indexOf('/tag/') !== 0 || !name || seen[path]) continue;
     seen[path] = true;
-    links.push('[a=cr:' + JSON.stringify({ id: path, name: name }) + '/]' + name + '[/a]');
+    links.push(clickable ? '[a=cr:' + JSON.stringify({ id: path, name: name }) + '/]' + name + '[/a]' : name);
   }
   return links.join(' / ');
 }
 
+function tagFolders(html, page) {
+  const scope = block(html, 'div', 'tagslist');
+  const list = [];
+  const seen = Object.create(null);
+  const re = /<a\b[^>]*>[\s\S]*?<\/a\s*>/gi;
+  let m;
+  while ((m = re.exec(scope))) {
+    const opening = m[0].match(/^<a\b[^>]*>/i)[0];
+    if (!hasClass(opening, 'name')) continue;
+    const path = sitePath(attrs(opening).href);
+    const name = text(m[0]);
+    const key = path.replace(/%[\da-f]{2}/gi, function (s) { return s.toUpperCase(); }).replace(/\/$/, '');
+    if (path.indexOf('/tag/') !== 0 || !name || seen[key]) continue;
+    seen[key] = true;
+    list.push({ vod_id: path, vod_name: name, vod_pic: '', vod_tag: 'folder', vod_remarks: '标签' });
+  }
+  const limit = 30;
+  return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
+}
+
 export default {
-  init(ext) { this.ext = ext || {}; },
+  init(ext) {
+    try { this.ext = typeof ext === 'string' ? JSON.parse(ext) : (ext || {}); }
+    catch (e) { this.ext = {}; }
+  },
 
   home(filter) {
-    try { return JSON.stringify({ class: menuClasses(getHtml(SITE + '/')) }); }
+    try {
+      const classes = menuClasses(getHtml(SITE + '/'));
+      if (classes.length) classes.unshift({ type_id: 'tags', type_name: '标签浏览' });
+      return JSON.stringify({ class: classes });
+    }
     catch (e) { return JSON.stringify({ class: [] }); }
   },
 
@@ -222,6 +249,7 @@ export default {
   category(tid, pg, filter, extend) {
     const page = pageNumber(pg);
     try {
+      if (tid === 'tags') return JSON.stringify(tagFolders(getHtml(SITE + '/tags'), page));
       const rank = String(tid).indexOf('rank:') === 0;
       const path = sitePath(rank ? String(tid).slice(5) : tid);
       if (!path || (!rank && !/^\/(?:category|tag)\//.test(path)) || (rank && page > 1)) return JSON.stringify(emptyPage(page));
@@ -261,7 +289,8 @@ export default {
         catch (e) {}
       }
       return JSON.stringify({ list: [{
-        vod_id: url, vod_name: title, vod_pic: pic, vod_content: description, type_name: tagLinks(html),
+        vod_id: url, vod_name: title, vod_pic: pic, vod_content: description,
+        type_name: detailTags(html, !!(this.ext && this.ext.clickableTags === true)),
         vod_play_from: '麻豆',
         vod_play_url: frames.map(function (frame, i) { return '播放' + (i + 1) + '$' + frame; }).join('#')
       }] });

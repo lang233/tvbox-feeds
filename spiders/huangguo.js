@@ -421,8 +421,8 @@ function requestPlayback(videoId, ep, referer) {
 
 // ---------- 对外接口 ----------
 
-// FongMi 分类链接协议，与官方 link(name, target) 的输出一致。
-function parseTagLinks(html) {
+// 默认返回纯文字；仅在明确支持 FongMi 分类链接的客户端启用标记。
+function detailTags(html, clickable) {
   let tags = [];
   const initial = html.match(/id=["']videoInitialData["'][^>]*>([\s\S]*?)<\/script>/i);
   if (initial) {
@@ -446,7 +446,7 @@ function parseTagLinks(html) {
     const name = value.trim();
     if (!name || seen[name]) return;
     seen[name] = true;
-    links.push('[a=cr:' + JSON.stringify({ id: 'tag:' + name, name: name }) + '/]' + name + '[/a]');
+    links.push(clickable ? '[a=cr:' + JSON.stringify({ id: 'tag:' + name, name: name }) + '/]' + name + '[/a]' : name);
   });
   return links.join(' / ');
 }
@@ -471,13 +471,32 @@ function tagCategory(name, page) {
   };
 }
 
+function tagFolders(page) {
+  const result = JSON.parse(getHtml(SITE + '/api/tags'));
+  if (!result || result.status !== 1 || !result.data || !Array.isArray(result.data.categories)) throw new Error('invalid tags payload');
+  const list = [];
+  const seen = Object.create(null);
+  result.data.categories.forEach(function (category) {
+    if (!category || !Array.isArray(category.tags)) return;
+    category.tags.forEach(function (tag) {
+      const name = tag && typeof tag.name === 'string' ? tag.name.trim() : '';
+      if (!name || seen[name]) return;
+      seen[name] = true;
+      list.push({ vod_id: 'tag:' + name, vod_name: name, vod_pic: '', vod_tag: 'folder', vod_remarks: '标签' });
+    });
+  });
+  const limit = 30;
+  return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
+}
+
 export default {
   init(ext) {
-    this.ext = ext || {};
+    try { this.ext = typeof ext === 'string' ? JSON.parse(ext) : (ext || {}); }
+    catch (e) { this.ext = {}; }
   },
 
   home(filter) {
-    return JSON.stringify({ class: CLASSES });
+    return JSON.stringify({ class: [{ type_id: 'tags', type_name: '标签浏览' }].concat(CLASSES) });
   },
 
   homeVod() {
@@ -492,6 +511,7 @@ export default {
   category(tid, pg, filter, extend) {
     const page = Math.max(1, parseInt(pg || '1', 10) || 1);
     try {
+      if (tid === 'tags') return JSON.stringify(tagFolders(page));
       if (String(tid).indexOf('tag:') === 0) {
         const name = String(tid).slice(4).trim();
         if (!name) return JSON.stringify({ list: [], page: page, pagecount: page });
@@ -543,7 +563,7 @@ export default {
         vod_id: id,
         vod_name: parseTitle(html, id),
         vod_pic: parsePic(html),
-        type_name: parseTagLinks(html),
+        type_name: detailTags(html, !!(this.ext && this.ext.clickableTags === true)),
         vod_play_from: '黄果',
         vod_play_url: playList.join('#')
       };
