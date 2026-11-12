@@ -421,6 +421,56 @@ function requestPlayback(videoId, ep, referer) {
 
 // ---------- 对外接口 ----------
 
+// FongMi 分类链接协议，与官方 link(name, target) 的输出一致。
+function parseTagLinks(html) {
+  let tags = [];
+  const initial = html.match(/id=["']videoInitialData["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (initial) {
+    try {
+      const data = JSON.parse(initial[1]);
+      if (Array.isArray(data.tags)) tags = data.tags;
+    } catch (e) {}
+  }
+  if (!tags.length) {
+    const scope = html.match(/<div\b[^>]*class=["'][^"']*\bhg-web-play__tags\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+    if (scope) {
+      const re = /<span\b[^>]*class=["'][^"']*\bhg-tag\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi;
+      let m;
+      while ((m = re.exec(scope[1]))) tags.push(stripTags(m[1]));
+    }
+  }
+  const links = [];
+  const seen = {};
+  tags.forEach(function (value) {
+    if (typeof value !== 'string') return;
+    const name = value.trim();
+    if (!name || seen[name]) return;
+    seen[name] = true;
+    links.push('[a=cr:' + JSON.stringify({ id: 'tag:' + name, name: name }) + '/]' + name + '[/a]');
+  });
+  return links.join(' / ');
+}
+
+function tagCategory(name, page) {
+  const result = JSON.parse(getHtml(SITE + '/api/videos/tag/' + encodeURIComponent(name) + '?page=' + page));
+  if (!result || result.status !== 1 || !result.data || !Array.isArray(result.data.items)) {
+    throw new Error('invalid tag payload');
+  }
+  const data = result.data;
+  const list = data.items.filter(function (item) { return item && item.id && item.title; }).map(function (item) {
+    const episodes = item.episode_count || item.total_episodes;
+    return {
+      vod_id: String(item.id), vod_name: stripTags(item.title), vod_pic: coverUrl(item.cover),
+      vod_remarks: episodes ? (item.is_finished ? '全' : '更新至') + episodes + '集' : ''
+    };
+  });
+  const pagination = data.pagination || {};
+  return {
+    list: list, page: page, pagecount: Math.max(page, Number(pagination.pages) || page),
+    limit: Number(pagination.size) || list.length, total: Number(pagination.total) || 0
+  };
+}
+
 export default {
   init(ext) {
     this.ext = ext || {};
@@ -442,6 +492,11 @@ export default {
   category(tid, pg, filter, extend) {
     const page = Math.max(1, parseInt(pg || '1', 10) || 1);
     try {
+      if (String(tid).indexOf('tag:') === 0) {
+        const name = String(tid).slice(4).trim();
+        if (!name) return JSON.stringify({ list: [], page: page, pagecount: page });
+        return JSON.stringify(tagCategory(name, page));
+      }
       let url;
       if (tid === 'home') {
         url = SITE + '/';
@@ -488,6 +543,7 @@ export default {
         vod_id: id,
         vod_name: parseTitle(html, id),
         vod_pic: parsePic(html),
+        type_name: parseTagLinks(html),
         vod_play_from: '黄果',
         vod_play_url: playList.join('#')
       };

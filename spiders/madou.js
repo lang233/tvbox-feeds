@@ -190,6 +190,22 @@ function players(html, detailUrl) {
   return list;
 }
 
+function tagLinks(html) {
+  const scope = block(html, 'div', 'article-tags');
+  const links = [];
+  const seen = {};
+  const re = /<a\b[^>]*>[\s\S]*?<\/a\s*>/gi;
+  let m;
+  while ((m = re.exec(scope))) {
+    const path = sitePath(attrs(m[0].match(/^<a\b[^>]*>/i)[0]).href);
+    const name = text(m[0]);
+    if (path.indexOf('/tag/') !== 0 || !name || seen[path]) continue;
+    seen[path] = true;
+    links.push('[a=cr:' + JSON.stringify({ id: path, name: name }) + '/]' + name + '[/a]');
+  }
+  return links.join(' / ');
+}
+
 export default {
   init(ext) { this.ext = ext || {}; },
 
@@ -208,7 +224,7 @@ export default {
     try {
       const rank = String(tid).indexOf('rank:') === 0;
       const path = sitePath(rank ? String(tid).slice(5) : tid);
-      if (!path || (!rank && path.indexOf('/category/') !== 0) || (rank && page > 1)) return JSON.stringify(emptyPage(page));
+      if (!path || (!rank && !/^\/(?:category|tag)\//.test(path)) || (rank && page > 1)) return JSON.stringify(emptyPage(page));
       const url = SITE + path.replace(/\/$/, '') + (page > 1 ? '/page/' + page : '');
       return JSON.stringify(pageResult(getHtml(url), page, rank));
     } catch (e) { return JSON.stringify(emptyPage(page)); }
@@ -245,7 +261,7 @@ export default {
         catch (e) {}
       }
       return JSON.stringify({ list: [{
-        vod_id: url, vod_name: title, vod_pic: pic, vod_content: description,
+        vod_id: url, vod_name: title, vod_pic: pic, vod_content: description, type_name: tagLinks(html),
         vod_play_from: '麻豆',
         vod_play_url: frames.map(function (frame, i) { return '播放' + (i + 1) + '$' + frame; }).join('#')
       }] });
