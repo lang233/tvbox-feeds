@@ -8,7 +8,11 @@
       "searchable": 1,
       "quickSearch": 0,
       "filterable": 1,
-      "changeable": 0
+      "changeable": 0,
+      "ext": {
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Mobile Safari/537.36",
+        "cookie": "cf_clearance=Ct7QGh00CaRwAXuBiq8NMYg8Qe7KFXyl8Ahvte85jHPBFoxJkiWkEYTIRPdC3eLTHcJ5xYY4_rnzOjpXVWbYIgYmhl2DhOif5ck8QgtOwBYrjNnSJy6-Hit_IIH_trZkttwirHMh6WNIXGARDafRjPuZX5endJg-TVFEne6u3kaHcJ2TZkA1NjpksGbn8ICO7Ofm93VT49oWADwOAlO81iHAT5fUwHrpc77_-Wxef1iOgMcNA5zMxB9DeLwjkmPMUmTXkgg0mo7RArGTeyV7QA5JGr6qy9kGV2DsZH2UsXfjNpO4uNYISXLNGP5C5PANKLonU60eydbTaAVsCJ4cIAkblCedNgyn7BDN8yfL0XmZ8yqQfztTh7PziKU"
+      }
     }
   ]
 }
