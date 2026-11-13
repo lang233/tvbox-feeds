@@ -87,7 +87,7 @@ function getHtml(url, referer) {
   return r.content;
 }
 
-function menuClasses(html) {
+function menuNodes(html) {
   const nav = block(html, 'div', 'sitenav');
   const roots = [];
   const stack = [];
@@ -105,29 +105,68 @@ function menuClasses(html) {
       node.href = attrs(m[0].match(/^<a\b[^>]*>/i)[0]).href || '';
     }
   }
+  return roots;
+}
+
+function groupId(node) {
+  const path = sitePath(node.href);
+  return 'group:' + (path.indexOf('/category/') === 0 ? path : encodeURIComponent(node.name));
+}
+
+function menuClasses(html) {
+  const roots = menuNodes(html);
   const classes = [];
   const seen = {};
   function add(node, rank) {
     const path = sitePath(node.href);
-    if (!path || (!rank && path.indexOf('/category/') !== 0)) return;
-    const key = path.replace(/%[\da-f]{2}/gi, function (s) { return s.toUpperCase(); }).replace(/\/$/, '');
+    const group = !rank && (node.children.length > 0 || node.name === '其他原创/企划');
+    if (!group && (!path || (!rank && path.indexOf('/category/') !== 0))) return;
+    const id = group ? groupId(node) : (rank ? 'rank:' : '') + path;
+    const key = id.replace(/%[\da-f]{2}/gi, function (s) { return s.toUpperCase(); }).replace(/\/$/, '');
     if (seen[key] || !node.name) return;
     seen[key] = true;
-    classes.push({ type_id: (rank ? 'rank:' : '') + path, type_name: node.name });
+    classes.push({ type_id: id, type_name: node.name });
   }
-  function descendants(nodes, rank) {
+  function rankings(nodes) {
     nodes.forEach(function (node) {
-      if (rank) { if (node.name === '点赞排行') add(node, true); }
-      else add(node, false);
-      descendants(node.children, rank);
+      if (node.name === '点赞排行') add(node, true);
+      rankings(node.children);
     });
   }
   roots.forEach(function (node) {
-    if (node.name === '麻豆传媒' || node.name === '麻豆番外篇') add(node, false);
-    else if (node.name === '其他原创/企划') descendants(node.children, false);
+    if (node.name === '麻豆传媒' || node.name === '麻豆番外篇' || node.name === '其他原创/企划') add(node, false);
   });
-  descendants(roots, true);
+  rankings(roots);
   return classes;
+}
+
+function groupFolders(html, id, page) {
+  let selected;
+  function find(nodes) {
+    nodes.forEach(function (node) {
+      if (groupId(node) === id) selected = node;
+      find(node.children);
+    });
+  }
+  find(menuNodes(html));
+  const list = [];
+  const seen = Object.create(null);
+  function add(id, name) {
+    const key = id.replace(/%[\da-f]{2}/gi, function (s) { return s.toUpperCase(); }).replace(/\/$/, '');
+    if (!name || seen[key]) return;
+    seen[key] = true;
+    list.push({ vod_id: id, vod_name: name, vod_pic: '', vod_tag: 'folder', vod_remarks: '子分类' });
+  }
+  if (selected) {
+    const ownPath = sitePath(selected.href);
+    if (ownPath.indexOf('/category/') === 0) add(ownPath, '全部内容');
+    selected.children.forEach(function (node) {
+      const path = sitePath(node.href);
+      if (node.children.length) add(groupId(node), node.name);
+      else if (path.indexOf('/category/') === 0) add(path, node.name);
+    });
+  }
+  return folderPage(list, page, '子分类', 'groups:help');
 }
 
 function cards(html) {
@@ -190,22 +229,6 @@ function players(html, detailUrl) {
   return list;
 }
 
-function detailTags(html, clickable) {
-  const scope = block(html, 'div', 'article-tags');
-  const links = [];
-  const seen = {};
-  const re = /<a\b[^>]*>[\s\S]*?<\/a\s*>/gi;
-  let m;
-  while ((m = re.exec(scope))) {
-    const path = sitePath(attrs(m[0].match(/^<a\b[^>]*>/i)[0]).href);
-    const name = text(m[0]);
-    if (path.indexOf('/tag/') !== 0 || !name || seen[path]) continue;
-    seen[path] = true;
-    links.push(clickable ? '[a=cr:' + JSON.stringify({ id: path, name: name }) + '/]' + name + '[/a]' : name);
-  }
-  return links.join(' / ');
-}
-
 function tagFolders(html, page) {
   const scope = block(html, 'div', 'tagslist');
   const list = [];
@@ -222,6 +245,12 @@ function tagFolders(html, page) {
     seen[key] = true;
     list.push({ vod_id: path, vod_name: name, vod_pic: '', vod_tag: 'folder', vod_remarks: '标签' });
   }
+  return folderPage(list, page, '标签分类', 'tags:help');
+}
+
+function folderPage(list, page, label, action) {
+  // 影视仓按首项是否文件夹选择布局；操作卡片让目录及下级页面保留海报网格。
+  if (list.length) list.unshift({ vod_id: action, vod_name: '使用说明', vod_pic: '', vod_remarks: label, action: action });
   const limit = 30;
   return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
 }
@@ -232,10 +261,16 @@ export default {
     catch (e) { this.ext = {}; }
   },
 
+  action(id) {
+    if (id === 'tags:help') return JSON.stringify({ toast: '选择标签查看视频，按返回键回到标签分类。' });
+    if (id === 'groups:help') return JSON.stringify({ toast: '选择子分类查看视频，按返回键回到上一级。' });
+    return JSON.stringify({});
+  },
+
   home(filter) {
     try {
       const classes = menuClasses(getHtml(SITE + '/'));
-      if (classes.length) classes.unshift({ type_id: 'tags', type_name: '标签浏览' });
+      if (classes.length) classes.unshift({ type_id: 'tags', type_name: '标签分类' });
       return JSON.stringify({ class: classes });
     }
     catch (e) { return JSON.stringify({ class: [] }); }
@@ -250,6 +285,7 @@ export default {
     const page = pageNumber(pg);
     try {
       if (tid === 'tags') return JSON.stringify(tagFolders(getHtml(SITE + '/tags'), page));
+      if (String(tid).indexOf('group:') === 0) return JSON.stringify(groupFolders(getHtml(SITE + '/'), tid, page));
       const rank = String(tid).indexOf('rank:') === 0;
       const path = sitePath(rank ? String(tid).slice(5) : tid);
       if (!path || (!rank && !/^\/(?:category|tag)\//.test(path)) || (rank && page > 1)) return JSON.stringify(emptyPage(page));
@@ -290,7 +326,6 @@ export default {
       }
       return JSON.stringify({ list: [{
         vod_id: url, vod_name: title, vod_pic: pic, vod_content: description,
-        type_name: detailTags(html, !!(this.ext && this.ext.clickableTags === true)),
         vod_play_from: '麻豆',
         vod_play_url: frames.map(function (frame, i) { return '播放' + (i + 1) + '$' + frame; }).join('#')
       }] });

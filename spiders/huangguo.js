@@ -23,6 +23,7 @@ const HEADERS = {
 };
 
 const CLASSES = [
+  { type_id: 'tags', type_name: '标签分类' },
   { type_id: 'ai-duanju',  type_name: 'AI成人短剧' },
   { type_id: 'ai-manju',   type_name: 'AI成人漫剧' },
   { type_id: 'ai-huanlian', type_name: 'AI换脸' },
@@ -421,36 +422,7 @@ function requestPlayback(videoId, ep, referer) {
 
 // ---------- 对外接口 ----------
 
-// 默认返回纯文字；仅在明确支持 FongMi 分类链接的客户端启用标记。
-function detailTags(html, clickable) {
-  let tags = [];
-  const initial = html.match(/id=["']videoInitialData["'][^>]*>([\s\S]*?)<\/script>/i);
-  if (initial) {
-    try {
-      const data = JSON.parse(initial[1]);
-      if (Array.isArray(data.tags)) tags = data.tags;
-    } catch (e) {}
-  }
-  if (!tags.length) {
-    const scope = html.match(/<div\b[^>]*class=["'][^"']*\bhg-web-play__tags\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
-    if (scope) {
-      const re = /<span\b[^>]*class=["'][^"']*\bhg-tag\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi;
-      let m;
-      while ((m = re.exec(scope[1]))) tags.push(stripTags(m[1]));
-    }
-  }
-  const links = [];
-  const seen = {};
-  tags.forEach(function (value) {
-    if (typeof value !== 'string') return;
-    const name = value.trim();
-    if (!name || seen[name]) return;
-    seen[name] = true;
-    links.push(clickable ? '[a=cr:' + JSON.stringify({ id: 'tag:' + name, name: name }) + '/]' + name + '[/a]' : name);
-  });
-  return links.join(' / ');
-}
-
+// 标签分类目录和对应的视频列表。
 function tagCategory(name, page) {
   const result = JSON.parse(getHtml(SITE + '/api/videos/tag/' + encodeURIComponent(name) + '?page=' + page));
   if (!result || result.status !== 1 || !result.data || !Array.isArray(result.data.items)) {
@@ -485,6 +457,8 @@ function tagFolders(page) {
       list.push({ vod_id: 'tag:' + name, vod_name: name, vod_pic: '', vod_tag: 'folder', vod_remarks: '标签' });
     });
   });
+  // 影视仓按首项是否文件夹选择布局；操作卡片让目录及下级页面保留海报网格。
+  if (list.length) list.unshift({ vod_id: 'tags:help', vod_name: '使用说明', vod_pic: '', vod_remarks: '标签分类', action: 'tags:help' });
   const limit = 30;
   return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
 }
@@ -495,8 +469,12 @@ export default {
     catch (e) { this.ext = {}; }
   },
 
+  action(id) {
+    return JSON.stringify(id === 'tags:help' ? { toast: '选择标签查看视频，按返回键回到标签分类。' } : {});
+  },
+
   home(filter) {
-    return JSON.stringify({ class: [{ type_id: 'tags', type_name: '标签浏览' }].concat(CLASSES) });
+    return JSON.stringify({ class: CLASSES });
   },
 
   homeVod() {
@@ -563,7 +541,6 @@ export default {
         vod_id: id,
         vod_name: parseTitle(html, id),
         vod_pic: parsePic(html),
-        type_name: detailTags(html, !!(this.ext && this.ext.clickableTags === true)),
         vod_play_from: '黄果',
         vod_play_url: playList.join('#')
       };
