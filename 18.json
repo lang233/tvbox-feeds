@@ -39,6 +39,16 @@
       "quickSearch": 0,
       "filterable": 0,
       "changeable": 0
+    },
+    {
+      "key": "hanime1",
+      "name": "Hanime1",
+      "type": 3,
+      "api": "https://raw.githubusercontent.com/lang233/tvbox-feeds/main/spiders/hanime1.js",
+      "searchable": 1,
+      "quickSearch": 0,
+      "filterable": 1,
+      "changeable": 0
     }
   ]
 }
