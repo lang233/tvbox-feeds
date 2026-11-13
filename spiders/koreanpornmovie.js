@@ -98,7 +98,7 @@ function main(html) { return block(html, 'main', 'site-main'); }
 
 function help(list, kind) {
   // 影视仓按首项是否 folder 选择布局；首项操作卡片保留三列海报网格。
-  if (list.length) list.unshift({ vod_id: kind + ':help', vod_name: '使用说明', vod_pic: '', vod_remarks: kind === 'tags' ? '标签分类' : '演员', action: kind + ':help' });
+  if (list.length) list.unshift({ vod_id: kind + ':help', vod_name: SITE, vod_pic: '', vod_remarks: kind === 'tags' ? '标签分类' : '演员', action: kind + ':help' });
   return list;
 }
 
@@ -190,8 +190,8 @@ export default {
 
   action(id) {
     const messages = {
-      'tags:help': '选择标签查看视频，按返回键回到标签分类。',
-      'actors:help': '选择演员查看视频，按返回键回到演员目录。'
+      'tags:help': SITE,
+      'actors:help': SITE
     };
     return JSON.stringify(Object.prototype.hasOwnProperty.call(messages, id) ? { toast: messages[id] } : {});
   },

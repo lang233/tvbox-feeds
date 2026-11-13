@@ -250,7 +250,7 @@ function tagFolders(html, page) {
 
 function folderPage(list, page, label, action) {
   // 影视仓按首项是否文件夹选择布局；操作卡片让目录及下级页面保留海报网格。
-  if (list.length) list.unshift({ vod_id: action, vod_name: '使用说明', vod_pic: '', vod_remarks: label, action: action });
+  if (list.length) list.unshift({ vod_id: action, vod_name: SITE, vod_pic: '', vod_remarks: label, action: action });
   const limit = 30;
   return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
 }
@@ -262,8 +262,8 @@ export default {
   },
 
   action(id) {
-    if (id === 'tags:help') return JSON.stringify({ toast: '选择标签查看视频，按返回键回到标签分类。' });
-    if (id === 'groups:help') return JSON.stringify({ toast: '选择子分类查看视频，按返回键回到上一级。' });
+    if (id === 'tags:help') return JSON.stringify({ toast: SITE });
+    if (id === 'groups:help') return JSON.stringify({ toast: SITE });
     return JSON.stringify({});
   },
 

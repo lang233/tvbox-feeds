@@ -458,7 +458,7 @@ function tagFolders(page) {
     });
   });
   // 影视仓按首项是否文件夹选择布局；操作卡片让目录及下级页面保留海报网格。
-  if (list.length) list.unshift({ vod_id: 'tags:help', vod_name: '使用说明', vod_pic: '', vod_remarks: '标签分类', action: 'tags:help' });
+  if (list.length) list.unshift({ vod_id: 'tags:help', vod_name: SITE, vod_pic: '', vod_remarks: '标签分类', action: 'tags:help' });
   const limit = 30;
   return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
 }
@@ -470,7 +470,7 @@ export default {
   },
 
   action(id) {
-    return JSON.stringify(id === 'tags:help' ? { toast: '选择标签查看视频，按返回键回到标签分类。' } : {});
+    return JSON.stringify(id === 'tags:help' ? { toast: SITE } : {});
   },
 
   home(filter) {
