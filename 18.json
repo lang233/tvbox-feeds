@@ -19,6 +19,16 @@
       "quickSearch": 0,
       "filterable": 0,
       "changeable": 0
+    },
+    {
+      "key": "koreanpornmovie",
+      "name": "韩国Porn",
+      "type": 3,
+      "api": "https://raw.githubusercontent.com/lang233/tvbox-feeds/main/spiders/koreanpornmovie.js",
+      "searchable": 1,
+      "quickSearch": 0,
+      "filterable": 0,
+      "changeable": 0
     }
   ]
 }
