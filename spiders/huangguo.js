@@ -25,8 +25,8 @@ const HEADERS = {
 const CLASSES = [
   { type_id: 'tags', type_name: '标签分类' },
   { type_id: 'topics', type_name: '专题' },
-  { type_id: 'ai-duanju',  type_name: 'AI成人短剧' },
-  { type_id: 'ai-manju',   type_name: 'AI成人漫剧' },
+  { type_id: 'ai-duanju',  type_name: '短剧' },
+  { type_id: 'ai-manju',   type_name: '漫剧' },
   { type_id: 'ranks/hot',  type_name: '排行榜' }
 ];
 
