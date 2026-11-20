@@ -24,10 +24,9 @@ const HEADERS = {
 
 const CLASSES = [
   { type_id: 'tags', type_name: '标签分类' },
+  { type_id: 'topics', type_name: '专题' },
   { type_id: 'ai-duanju',  type_name: 'AI成人短剧' },
   { type_id: 'ai-manju',   type_name: 'AI成人漫剧' },
-  { type_id: 'ai-huanlian', type_name: 'AI换脸' },
-  { type_id: 'ai-mogai',   type_name: 'AI魔改' },
   { type_id: 'ranks/hot',  type_name: '排行榜' }
 ];
 
@@ -147,7 +146,9 @@ function getHtml(url, referer) {
   const headers = Object.assign({}, HEADERS);
   if (referer) headers.Referer = referer;
   const r = req(url, { method: 'get', headers: headers, timeout: TIMEOUT_MS });
-  if (!r) return '';
+  const code = Number(r && r.code);
+  // 下线页和错误页也包含推荐卡片，不能作为分类或详情继续解析。
+  if (!(code >= 200 && code < 300)) throw new Error('HTTP ' + code);
   return typeof r.content === 'string' ? r.content : '';
 }
 
@@ -463,6 +464,61 @@ function tagFolders(page) {
   return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
 }
 
+function topicFolders(page) {
+  const list = [];
+  const seen = Object.create(null);
+  let pages = 1;
+  // 先取全站点的分页目录，再按客户端卡片数量分页，网址卡片只占首项。
+  for (let current = 1; current <= pages; current++) {
+    const result = JSON.parse(getHtml(SITE + '/api/topics?size=30&page=' + current));
+    if (!result || result.status !== 1 || !result.data || !Array.isArray(result.data.items)) {
+      throw new Error('invalid topics payload');
+    }
+    const data = result.data;
+    if (current === 1) pages = Math.max(1, parseInt(data.pagination && data.pagination.pages, 10) || 1);
+    data.items.forEach(function (topic) {
+      const slug = topic && typeof topic.slug === 'string' ? topic.slug.trim() : '';
+      const title = topic && typeof topic.title === 'string' ? stripTags(topic.title) : '';
+      if (!slug || !title || seen[slug]) return;
+      seen[slug] = true;
+      const count = Number(topic.video_count);
+      list.push({
+        vod_id: 'topic:' + slug, vod_name: title, vod_pic: coverUrl(topic.cover), vod_tag: 'folder',
+        vod_remarks: Number.isFinite(count) && count >= 0 ? count + '部剧集' : '专题'
+      });
+    });
+  }
+  if (list.length) list.unshift({ vod_id: 'topics:help', vod_name: SITE, vod_pic: '', vod_remarks: '专题', action: 'topics:help' });
+  const limit = 30;
+  return { list: list.slice((page - 1) * limit, page * limit), page: page, pagecount: Math.max(1, Math.ceil(list.length / limit)), limit: limit, total: list.length };
+}
+
+function topicCategory(slug, page) {
+  const result = JSON.parse(getHtml(SITE + '/api/topics/' + encodeURIComponent(slug) + '?page=' + page));
+  const data = result && result.data && result.data.videos;
+  if (!result || result.status !== 1 || !data || !Array.isArray(data.items)) {
+    throw new Error('invalid topic videos payload');
+  }
+  const list = data.items.filter(function (item) { return item && item.id && item.title; }).map(function (item) {
+    const episodes = Number(item.episode_count || item.total_episodes) || 0;
+    const total = Number(item.total_episodes) || 0;
+    const finished = item.is_finished || (total > 0 && episodes >= total);
+    const remarks = [];
+    if (episodes > 0) remarks.push((finished ? '全' : '更新至') + episodes + '集');
+    const score = Number(item.score);
+    if (Number.isFinite(score) && score > 0 && score <= 10) remarks.push(score.toFixed(1) + '分');
+    return {
+      vod_id: String(item.id), vod_name: stripTags(item.title), vod_pic: coverUrl(item.cover),
+      vod_remarks: remarks.join(' · ')
+    };
+  });
+  const pagination = data.pagination || {};
+  return {
+    list: list, page: page, pagecount: Math.max(page, Number(pagination.pages) || page),
+    limit: Number(pagination.size) || list.length, total: Number(pagination.total) || 0
+  };
+}
+
 export default {
   init(ext) {
     try { this.ext = typeof ext === 'string' ? JSON.parse(ext) : (ext || {}); }
@@ -470,7 +526,7 @@ export default {
   },
 
   action(id) {
-    return JSON.stringify(id === 'tags:help' ? { toast: SITE } : {});
+    return JSON.stringify(id === 'tags:help' || id === 'topics:help' ? { toast: SITE } : {});
   },
 
   home(filter) {
@@ -489,7 +545,15 @@ export default {
   category(tid, pg, filter, extend) {
     const page = Math.max(1, parseInt(pg || '1', 10) || 1);
     try {
+      const route = String(tid || '').replace(/^\/+|\/+$/g, '');
+      if (route === 'ai-huanlian' || route === 'ai-mogai') return JSON.stringify({ list: [], page: page, pagecount: page });
       if (tid === 'tags') return JSON.stringify(tagFolders(page));
+      if (tid === 'topics') return JSON.stringify(topicFolders(page));
+      if (String(tid).indexOf('topic:') === 0) {
+        const slug = String(tid).slice(6).trim();
+        if (!slug) return JSON.stringify({ list: [], page: page, pagecount: page });
+        return JSON.stringify(topicCategory(slug, page));
+      }
       if (String(tid).indexOf('tag:') === 0) {
         const name = String(tid).slice(4).trim();
         if (!name) return JSON.stringify({ list: [], page: page, pagecount: page });
@@ -499,8 +563,7 @@ export default {
       if (tid === 'home') {
         url = SITE + '/';
       } else {
-        const id = String(tid || '').replace(/^\/+|\/+$/g, '');
-        url = SITE + '/' + id + '/' + (page > 1 ? page + '/' : '');
+        url = SITE + '/' + route + '/' + (page > 1 ? page + '/' : '');
       }
       const html = getHtml(url);
       const isRank = String(tid).indexOf('rank') !== -1;
