@@ -3,6 +3,7 @@ const SITE = 'https://koreanpornmovie.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const TIMEOUT = 15000;
 const CLASSES = [
+  { type_id: 'latest', type_name: '最新' },
   { type_id: 'tags', type_name: '标签分类' },
   { type_id: 'actors', type_name: '演员' }
 ];
@@ -199,6 +200,10 @@ export default {
   category(tid, pg, filter, extend) {
     const page = pageNumber(pg);
     try {
+      if (tid === 'latest') {
+        const url = SITE + (page > 1 ? '/page/' + page + '/' : '/') + '?filter=latest';
+        return JSON.stringify(pageResult(getHtml(url), page, false));
+      }
       if (tid === 'tags') return JSON.stringify(tagFolders(getHtml(SITE + '/tags/'), page));
       if (tid === 'actors') return JSON.stringify(pageResult(getHtml(SITE + '/actors/' + (page > 1 ? 'page/' + page + '/' : '')), page, true));
       const path = sitePath(tid);

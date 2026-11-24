@@ -23,6 +23,7 @@ const HEADERS = {
 };
 
 const CLASSES = [
+  { type_id: 'original', type_name: '全部' },
   { type_id: 'tags', type_name: '标签分类' },
   { type_id: 'topics', type_name: '专题' },
   { type_id: 'ai-duanju',  type_name: '短剧' },
@@ -568,6 +569,15 @@ export default {
       const html = getHtml(url);
       const isRank = String(tid).indexOf('rank') !== -1;
       const list = isRank ? parseRanks(html) : parseGridCards(html, false);
+      if (route === 'original') {
+        let pagecount = page;
+        const links = html.match(/<a\b[^>]*\bclass="[^"]*\bhg-pager__(?:page|arrow)\b[^"]*"[^>]*>/g) || [];
+        for (const link of links) {
+          const number = link.match(/\bhref="(?:https:\/\/huangguoai\.com)?\/original\/(\d+)\/"/);
+          if (number) pagecount = Math.max(pagecount, Number(number[1]));
+        }
+        return JSON.stringify({ list: list, page: page, pagecount: pagecount, limit: list.length });
+      }
       // 排行榜是单页固定列表：站点 /ranks/hot/N/ 在 N>1 时并不分页，只会返回兜底重复内容，
       // 若宣称“有下一页”会让 app 持续请求并追加重复条目（实测第2页==第3页，永不返回空）。
       // 故只有“非排行榜且有数据”才宣称有下一页；普通分类页在下一页返回空时仍会自然终止。
