@@ -5,6 +5,7 @@ import 'assets://js/lib/crypto-js.js';
 const PROXY_MAX_TIMEOUT = 120000;
 
 function postProxy(endpoint, body) {
+  let code;
   let result;
   try {
     const response = req(endpoint, {
@@ -13,10 +14,17 @@ function postProxy(endpoint, body) {
       body: JSON.stringify(body),
       timeout: PROXY_MAX_TIMEOUT + 10000
     });
-    const code = Number(response && response.code);
+    code = Number(response && response.code);
     if (!(code >= 200 && code < 300)) throw new Error('HTTP ' + code);
     result = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
   } catch (error) {
+    if (code === 500 && body.cmd === 'request.get' && body.session !== undefined) {
+      try {
+        postProxy(endpoint, { cmd: 'sessions.destroy', session: body.session });
+      } catch (destroyError) {
+        // 保留取页失败的提示。
+      }
+    }
     throw new Error('代理请求失败，请检查代理服务');
   }
   if (!result || result.status !== 'ok') throw new Error('代理服务返回失败');
@@ -33,13 +41,11 @@ function unwrapBrowserJson(content) {
 function createPageRequest() {
   let proxy;
   let sessionId;
-  let sessionError;
 
   return {
     init(ext) {
       proxy = undefined;
       sessionId = undefined;
-      sessionError = undefined;
       if (typeof ext === 'string') {
         try { ext = JSON.parse(ext); }
         catch (error) { return; }
@@ -47,19 +53,12 @@ function createPageRequest() {
       proxy = ext && ext.cfProxy;
       if (!proxy || proxy.session === undefined || proxy.session === null || proxy.session === '') return;
       sessionId = proxy.session;
-      try {
-        // 在首次取页前，先向配置的 /v1 地址发送 JSON POST 来初始化会话。
-        postProxy(proxy.url, { cmd: 'sessions.create', session: sessionId });
-      } catch (error) {
-        sessionError = new Error('代理会话初始化失败，请重新加载订阅');
-      }
     },
 
     get enabled() { return !!proxy; },
 
     get(url, options, expectJson = false) {
       if (!proxy) return req(url, options);
-      if (sessionError) throw sessionError;
       const { solution } = postProxy(proxy.url, {
         cmd: 'request.get', url, maxTimeout: PROXY_MAX_TIMEOUT, session: sessionId
       });
