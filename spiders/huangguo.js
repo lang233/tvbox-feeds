@@ -2,12 +2,83 @@
 // FongMi / 影视TV QuickJS Spider adapter —— 优化版
 // 基于 huangguo.js 重构，站点抓取/解析逻辑保持不变，重点修复：
 import 'assets://js/lib/crypto-js.js';
+const PROXY_MAX_TIMEOUT = 120000;
+
+function postProxy(endpoint, body) {
+  let result;
+  try {
+    const response = req(endpoint, {
+      method: 'post',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      timeout: PROXY_MAX_TIMEOUT + 10000
+    });
+    const code = Number(response && response.code);
+    if (!(code >= 200 && code < 300)) throw new Error('HTTP ' + code);
+    result = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
+  } catch (error) {
+    throw new Error('代理请求失败，请检查代理服务');
+  }
+  if (!result || result.status !== 'ok') throw new Error('代理服务返回失败');
+  return result;
+}
+
+function unwrapBrowserJson(content) {
+  const pre = /^\s*</.test(content) && content.match(/<pre\b[^>]*>([\s\S]*?)<\/pre>/i);
+  if (!pre) return content;
+  const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+  return pre[1].replace(/&(amp|lt|gt|quot|apos);/g, (_, name) => entities[name]);
+}
+
+function createPageRequest() {
+  let proxy;
+  let sessionId;
+  let sessionError;
+
+  return {
+    init(ext) {
+      proxy = undefined;
+      sessionId = undefined;
+      sessionError = undefined;
+      if (typeof ext === 'string') {
+        try { ext = JSON.parse(ext); }
+        catch (error) { return; }
+      }
+      proxy = ext && ext.cfProxy;
+      if (!proxy || proxy.session === undefined || proxy.session === null || proxy.session === '') return;
+      sessionId = proxy.session;
+      try {
+        // 在首次取页前，先向配置的 /v1 地址发送 JSON POST 来初始化会话。
+        postProxy(proxy.url, { cmd: 'sessions.create', session: sessionId });
+      } catch (error) {
+        sessionError = new Error('代理会话初始化失败，请重新加载订阅');
+      }
+    },
+
+    get enabled() { return !!proxy; },
+
+    get(url, options, expectJson = false) {
+      if (!proxy) return req(url, options);
+      if (sessionError) throw sessionError;
+      const { solution } = postProxy(proxy.url, {
+        cmd: 'request.get', url, maxTimeout: PROXY_MAX_TIMEOUT, session: sessionId
+      });
+      const code = Number(solution && solution.status);
+      if (!solution || !(code >= 100 && code < 600) || typeof solution.response !== 'string') {
+        throw new Error('代理响应缺少网页内容或状态码');
+      }
+      return { code, content: expectJson ? unwrapBrowserJson(solution.response) : solution.response };
+    }
+  };
+}
+
 
 const SITE = 'https://huangguoai.com';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const IMG_KEY = 'f5d965df75336270';
 const IMG_IV = '97b60394abc2fbe1';
 const TIMEOUT_MS = 7000;      // 单封面取图超时(ms)
+const pageRequest = createPageRequest();
 const DEBUG = false;          // 置 true 可打印取图/解密失败原因
 // 服务端解密Worker地址。填上后封面 URL 直接指向明文图（TV端稳定，推荐）：
 // 留空 '' 则回退到蜘蛛 proxy() 运行时解密（依赖 app 把封面请求走代理，TV 上不稳）。
@@ -146,7 +217,7 @@ function stripTags(s) {
 function getHtml(url, referer) {
   const headers = Object.assign({}, HEADERS);
   if (referer) headers.Referer = referer;
-  const r = req(url, { method: 'get', headers: headers, timeout: TIMEOUT_MS });
+  const r = pageRequest.get(url, { method: 'get', headers: headers, timeout: TIMEOUT_MS }, url.indexOf(SITE + '/api/') === 0);
   const code = Number(r && r.code);
   // 下线页和错误页也包含推荐卡片，不能作为分类或详情继续解析。
   if (!(code >= 200 && code < 300)) throw new Error('HTTP ' + code);
@@ -524,6 +595,7 @@ export default {
   init(ext) {
     try { this.ext = typeof ext === 'string' ? JSON.parse(ext) : (ext || {}); }
     catch (e) { this.ext = {}; }
+    pageRequest.init(this.ext);
   },
 
   action(id) {
