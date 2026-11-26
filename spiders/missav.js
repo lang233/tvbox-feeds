@@ -2,6 +2,16 @@
 import 'assets://js/lib/crypto-js.js';
 const PROXY_MAX_TIMEOUT = 120000;
 
+function readPageRequestExtension(ext) {
+  if (typeof ext === 'string') {
+    // 影视仓电视版收到原始 JSON 时会在宿主线程调用 QuickJS 解析。
+    if (ext.indexOf('json:') === 0) ext = ext.slice(5);
+    try { ext = JSON.parse(ext); }
+    catch (error) { return {}; }
+  }
+  return ext && typeof ext === 'object' && !Array.isArray(ext) ? ext : {};
+}
+
 function postProxy(endpoint, body) {
   let code;
   let result;
@@ -42,15 +52,13 @@ function createPageRequest() {
 
   return {
     init(ext) {
-      proxy = undefined;
+      const config = readPageRequestExtension(ext);
+      proxy = config.cfProxy;
       sessionId = undefined;
-      if (typeof ext === 'string') {
-        try { ext = JSON.parse(ext); }
-        catch (error) { return; }
+      if (proxy && proxy.session !== undefined && proxy.session !== null && proxy.session !== '') {
+        sessionId = proxy.session;
       }
-      proxy = ext && ext.cfProxy;
-      if (!proxy || proxy.session === undefined || proxy.session === null || proxy.session === '') return;
-      sessionId = proxy.session;
+      return config;
     },
 
     get enabled() { return !!proxy; },

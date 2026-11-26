@@ -1,6 +1,16 @@
 // 影视仓同步 QuickJS；不执行网站脚本，也不自动获取浏览器 Cookie。
 const PROXY_MAX_TIMEOUT = 120000;
 
+function readPageRequestExtension(ext) {
+  if (typeof ext === 'string') {
+    // 影视仓电视版收到原始 JSON 时会在宿主线程调用 QuickJS 解析。
+    if (ext.indexOf('json:') === 0) ext = ext.slice(5);
+    try { ext = JSON.parse(ext); }
+    catch (error) { return {}; }
+  }
+  return ext && typeof ext === 'object' && !Array.isArray(ext) ? ext : {};
+}
+
 function postProxy(endpoint, body) {
   let code;
   let result;
@@ -41,15 +51,13 @@ function createPageRequest() {
 
   return {
     init(ext) {
-      proxy = undefined;
+      const config = readPageRequestExtension(ext);
+      proxy = config.cfProxy;
       sessionId = undefined;
-      if (typeof ext === 'string') {
-        try { ext = JSON.parse(ext); }
-        catch (error) { return; }
+      if (proxy && proxy.session !== undefined && proxy.session !== null && proxy.session !== '') {
+        sessionId = proxy.session;
       }
-      proxy = ext && ext.cfProxy;
-      if (!proxy || proxy.session === undefined || proxy.session === null || proxy.session === '') return;
-      sessionId = proxy.session;
+      return config;
     },
 
     get enabled() { return !!proxy; },
@@ -277,11 +285,10 @@ function media(html) {
 
 export default {
   init(ext) {
-    ext = object(ext);
-    const headers = object(ext.headers);
-    config = { cookie: String(ext.cookie || headers.Cookie || ''), userAgent: String(ext.userAgent || headers['User-Agent'] || '') };
+    const options = pageRequest.init(ext);
+    const headers = object(options.headers);
+    config = { cookie: String(options.cookie || headers.Cookie || ''), userAgent: String(options.userAgent || headers['User-Agent'] || '') };
     landing = '';
-    pageRequest.init(ext);
   },
   home() {
     try { landing = getHtml('/search'); return JSON.stringify(navigation(landing)); }
