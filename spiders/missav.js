@@ -1,4 +1,5 @@
 // FongMi / 影视仓 QuickJS Spider；导航和子分类从页面动态读取。
+import 'assets://js/lib/crypto-js.js';
 const PROXY_MAX_TIMEOUT = 120000;
 
 function postProxy(endpoint, body) {
@@ -76,6 +77,9 @@ const TIMEOUT = 15000;
 const pageRequest = createPageRequest();
 let navigation = null;
 let landingHtml = '';
+let recommendationConfig;
+let recommendationUser;
+let recommendationPages = [];
 
 
 function decode(value) {
@@ -292,6 +296,75 @@ function pageResult(html, page, list) {
   return { list: list, page: page, pagecount: pagecount, limit: list.length };
 }
 
+function loadRecommendationConfig() {
+  const html = landingHtml || getHtml(SITE + '/');
+  const scripts = html.match(/<script\b[^>]*>/gi) || [];
+  const app = scripts.map(function (tag) { return sitePath(attrs(tag).src); }).find(function (path) {
+    return /^\/build\/assets\/app[.-][\w.-]+\.js(?:\?.*)?$/.test(path);
+  });
+  if (!app) throw new Error('MissAV 推荐配置未找到');
+  const bundle = getHtml(SITE + app);
+  const settings = bundle.match(/\.recombeeClient\s*=\s*new\s+[\w$.]+\.ApiClient\(\s*["']([\w-]+)["']\s*,\s*["']([\w-]+)["']\s*,\s*\{\s*baseUri\s*:\s*["'](client-rapi(?:-[\w-]+)?\.recombee\.com)["']/i);
+  if (!settings) throw new Error('MissAV 推荐接口配置未找到');
+  const spotlight = html.match(/spotlightVideoIds:\s*\[([^\]]*)\]/);
+  const spotlightVideoIds = (spotlight ? spotlight[1].match(/["'][\w-]+["']/g) || [] : []).map(function (item) {
+    return item.slice(1, -1);
+  });
+  return { database: settings[1], token: settings[2], host: settings[3], spotlightVideoIds: spotlightVideoIds };
+}
+
+function recommendationRequest(path, body) {
+  const config = recommendationConfig;
+  const query = '/' + config.database + path + '?frontend_timestamp=' + Math.floor(Date.now() / 1000);
+  const signature = CryptoJS.HmacSHA1(query, config.token).toString();
+  const response = req('https://' + config.host + query + '&frontend_sign=' + signature, {
+    method: 'post', timeout: TIMEOUT,
+    headers: { 'User-Agent': UA, Origin: SITE, Referer: SITE + '/', 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (Number(response && response.code) !== 200) throw new Error('MissAV 推荐接口 HTTP ' + (response && response.code));
+  const result = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
+  if (!result || !Array.isArray(result.recomms)) throw new Error('MissAV 推荐数据格式变化');
+  return result;
+}
+
+function recommendationCard(item) {
+  if (!item || !/^[\w-]+$/.test(item.id || '') || !item.values) return null;
+  const id = item.id;
+  const values = item.values;
+  const dm = /^\d+$/.test(values.dm) && Number(values.dm) > 0 ? '/dm' + values.dm : '';
+  const name = id.toUpperCase().replace(/-(?:UNCENSORED-LEAK|CHINESE-SUBTITLE|ENGLISH-SUBTITLE)$/, '');
+  const duration = Number(values.duration);
+  const remarks = duration > 0 ? [Math.floor(duration / 3600), Math.floor(duration / 60) % 60, Math.floor(duration) % 60]
+    .map(function (part) { return String(part).padStart(2, '0'); }).join(':') : '';
+  return { vod_id: SITE + dm + '/' + id, vod_name: (name + ' ' + decode(values.title_zh)).trim(),
+    vod_pic: 'https://d.surrit.com/' + id + '/cover-t.jpg', vod_remarks: remarks };
+}
+
+function recommendations(page) {
+  if (page === 1) recommendationPages = [];
+  if (!recommendationConfig) recommendationConfig = loadRecommendationConfig();
+  if (!recommendationUser) recommendationUser = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (char) {
+    const digit = Math.floor(Math.random() * 16);
+    return (char === 'x' ? digit : (digit & 3) | 8).toString(16);
+  });
+  while (recommendationPages.length < page) {
+    const previous = recommendationPages[recommendationPages.length - 1];
+    if (previous && !previous.next) return emptyPage(page);
+    const response = previous
+      ? recommendationRequest('/recomms/next/items/' + encodeURIComponent(previous.next), { count: 8, cascadeCreate: true })
+      : recommendationRequest('/recomms/users/' + recommendationUser + '/items/', {
+        count: 4, scenario: 'desktop-home-recommended', cascadeCreate: true, returnProperties: true,
+        includedProperties: ['title_zh', 'duration', 'has_chinese_subtitle', 'has_english_subtitle', 'is_uncensored_leak', 'dm'],
+        filter: null, logic: { name: 'missav:personal', settings: { spotlightVideoIds: recommendationConfig.spotlightVideoIds } }
+      });
+    const list = response.recomms.map(recommendationCard).filter(Boolean);
+    recommendationPages.push({ list: list, next: list.length && response.recommId });
+  }
+  const result = recommendationPages[page - 1];
+  return { list: result.list, page: page, pagecount: result.next ? page + 1 : page, limit: result.list.length };
+}
+
 function errorPage(page, error) {
   const message = String(error.message || error);
   return { list: [{ vod_id: 'error:' + message, vod_name: message, vod_pic: '', vod_remarks: '加载失败', action: 'error:' + message }], page: page, pagecount: page, limit: 1 };
@@ -351,6 +424,9 @@ export default {
   init(ext) {
     navigation = null;
     landingHtml = '';
+    recommendationConfig = undefined;
+    recommendationUser = undefined;
+    recommendationPages = [];
     pageRequest.init(ext);
   },
 
@@ -358,7 +434,9 @@ export default {
     try {
       landingHtml = getHtml(SITE + '/');
       navigation = menu(landingHtml);
-      return JSON.stringify({ class: navigation.map(function (node) { return { type_id: node.id, type_name: node.name }; }) });
+      const classes = navigation.map(function (node) { return { type_id: node.id, type_name: node.name }; });
+      classes.unshift({ type_id: 'recommended', type_name: '推荐' });
+      return JSON.stringify({ class: classes });
     } catch (e) {
       navigation = null;
       landingHtml = '';
@@ -384,6 +462,7 @@ export default {
   category(tid, pg, filter, extend) {
     const page = pageNumber(pg);
     try {
+      if (tid === 'recommended') return JSON.stringify(recommendations(page));
       if (String(tid).indexOf('group:') === 0) {
         if (!navigation) navigation = menu(getHtml(SITE + '/'));
         const selected = navigation.filter(function (n) { return n.id === tid; })[0];
